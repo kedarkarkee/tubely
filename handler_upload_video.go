@@ -83,17 +83,30 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	_, err = io.Copy(tempFile, file)
 
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video 1", err)
 		return
 	}
 
 	_, err = tempFile.Seek(0, io.SeekStart)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video 2", err)
 		return
 	}
 
-	assetKey := getAssetPath(mediaType)
+	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video 3", err)
+		return
+	}
+
+	if aspectRatio == "16:9" {
+		aspectRatio = "landscape"
+	} else if aspectRatio == "9:16" {
+		aspectRatio = "portrait"
+	}
+
+	assetKey := aspectRatio + "/" + getAssetPath(mediaType)
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &assetKey,
@@ -102,7 +115,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	})
 
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video to s3", err)
 		return
 	}
 
