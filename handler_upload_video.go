@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -105,12 +106,29 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	} else if aspectRatio == "9:16" {
 		aspectRatio = "portrait"
 	}
+	processedVideo, err := processVideoForFastStart(tempFile.Name())
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video 4", err)
+		return
+	}
+
+	defer os.Remove(processedVideo)
+
+	processedVideoBytes, err := os.Open(processedVideo)
+
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldnot upload video 5", err)
+		return
+	}
+
+	defer processedVideoBytes.Close()
 
 	assetKey := aspectRatio + "/" + getAssetPath(mediaType)
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &assetKey,
-		Body:        tempFile,
+		Body:        processedVideoBytes,
 		ContentType: &mediaType,
 	})
 
@@ -130,4 +148,15 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	respondWithJSON(w, http.StatusOK, video)
+}
+
+func processVideoForFastStart(filePath string) (string, error) {
+	tempFile := filePath + ".processing"
+	cmd := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", tempFile)
+	err := cmd.Run()
+
+	if err != nil {
+		return "", nil
+	}
+	return tempFile, nil
 }
